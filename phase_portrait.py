@@ -45,9 +45,7 @@ def main():
     # In a public web app, sanitize inputs to prevent code injection.
     try:
     # Create a dictionary of allowed variables and functions
-    
-    # 2. Evaluate the Equations
-    try:
+
         # Create a dictionary of allowed variables and functions
         local_scope = {
             "x": X,

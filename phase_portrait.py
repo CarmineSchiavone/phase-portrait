@@ -46,27 +46,45 @@ def main():
     try:
     # Create a dictionary of allowed variables and functions
     
-     local_scope = {
-        "x": X,
-        "y": Y,
-        "sin": np.sin,
-        "cos": np.cos,
-        "tan": np.tan,
-        "exp": np.exp,
-        "sqrt": np.sqrt,
-        "log": np.log,
-        "pi": np.pi
-     }
-    
-    # Calculate vector components using the new scope
-    U = eval(eq_x, {"__builtins__": None}, local_scope)
-    V = eval(eq_y, {"__builtins__": None}, local_scope)
-
-     
+    # 2. Evaluate the Equations
+    try:
+        # Create a dictionary of allowed variables and functions
+        local_scope = {
+            "x": X,
+            "y": Y,
+            "sin": np.sin,
+            "cos": np.cos,
+            "tan": np.tan,
+            "exp": np.exp,
+            "sqrt": np.sqrt,
+            "log": np.log,
+            "pi": np.pi
+        }
         
-        # Calculate vector components
+        # Calculate vector components using the new scope
         U = eval(eq_x, {"__builtins__": None}, local_scope)
         V = eval(eq_y, {"__builtins__": None}, local_scope)
+        
+        # --- Visualization ---
+        fig, ax = plt.subplots(figsize=(10, 6))
+        
+        # Streamplot creates the flow lines
+        # color maps to velocity magnitude
+        strm = ax.streamplot(X, Y, U, V, color=np.sqrt(U**2 + V**2), cmap='viridis', density=density)
+        fig.colorbar(strm.lines, label='Velocity Magnitude')
+        
+        ax.set_xlabel('x')
+        ax.set_ylabel('y')
+        ax.set_title(f'Phase Portrait')
+        ax.grid(True, alpha=0.3)
+        
+        # Display in Streamlit
+        st.pyplot(fig)
+
+    except Exception as e:
+        # This block catches errors (like typing "sinn(x)" instead of "sin(x)")
+        st.error(f"Error parsing equations: {e}")
+        st.info("Check your syntax. Example: 'sin(x)' or 'y - x'")
         
         # Normalize arrows for cleaner visualization (optional, keeps arrows same size)
         magnitude = np.sqrt(U**2 + V**2)

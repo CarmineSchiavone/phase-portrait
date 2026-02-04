@@ -1,136 +1,124 @@
 import streamlit as st
 import numpy as np
-import plotly.graph_objects as go
-import plotly.figure_factory as ff
 from scipy.integrate import odeint
+import plotly.graph_objects as go
+
+# --- 1. The Math (Lorenz System) ---
+def lorenz(state, t, sigma, rho, beta):
+    x, y, z = state
+    dxdt = sigma * (y - x)
+    dydt = x * (rho - z) - y
+    dzdt = x * y - beta * z
+    return [dxdt, dydt, dzdt]
 
 def main():
-    st.set_page_config(page_title="Interactive Phase Portrait", layout="wide")
-    st.title("Math Sandbox: Interactive & Animated")
+    st.set_page_config(page_title="Lorenz Attractor 3D", layout="wide")
+    st.title("The Butterfly Effect: Lorenz Attractor")
 
-    # --- Sidebar: Configuration ---
+    # --- 2. Sidebar Controls ---
     with st.sidebar:
-        st.header("1. System")
-        eq_x = st.text_input("dx/dt =", value="y")
-        eq_y = st.text_input("dy/dt =", value="sin(x) - 0.2*y") # Damped pendulum
+        st.header("Parameters")
+        # Classic values: sigma=10, rho=28, beta=8/3
+        rho = st.slider("Rho (Rayleigh Number)", 0.0, 100.0, 28.0, help="Controls the chaos. Try 10, 28, or 99.")
+        sigma = st.slider("Sigma (Prandtl Number)", 0.0, 50.0, 10.0)
+        beta = st.slider("Beta", 0.0, 5.0, 8.0/3.0)
         
-        st.header("2. Animation")
-        t_max = st.slider("Time Duration", 5.0, 50.0, 20.0)
-        frames = st.slider("Animation Speed (Frames)", 50, 200, 100)
-        
-        st.header("3. Initial Condition")
-        col1, col2 = st.columns(2)
-        x0 = col1.number_input("x0", value=2.0, step=0.5)
-        y0 = col2.number_input("y0", value=0.0, step=0.5)
+        st.header("Simulation Settings")
+        dt = 0.01
+        steps = st.slider("Number of Steps", 1000, 10000, 3000)
+        speed = st.slider("Animation Speed (Skip Frames)", 1, 50, 10, help="Higher = Faster Animation")
 
-    # --- Computation ---
+    # --- 3. Compute Trajectory ---
+    # Initial condition (slightly off-center to ensure movement)
+    initial_state = [1.0, 1.0, 1.0]
+    t = np.arange(0, steps * dt, dt)
     
-    # 1. Grid for Vector Field
-    range_val = 6.0
-    # Use fewer points for Plotly to keep interaction smooth
-    x = np.linspace(-range_val, range_val, 20)
-    y = np.linspace(-range_val, range_val, 20)
-    X, Y = np.meshgrid(x, y)
-    
-    # 2. Safety & Eval Wrapper
-    local_scope = {
-        "sin": np.sin, "cos": np.cos, "tan": np.tan,
-        "exp": np.exp, "sqrt": np.sqrt, "pi": np.pi,
-        "x": X, "y": Y
-    }
-    
-    try:
-        # Compute Vector Field
-        U = eval(eq_x, {"__builtins__": None}, local_scope)
-        V = eval(eq_y, {"__builtins__": None}, local_scope)
+    # Solve ODE
+    sol = odeint(lorenz, initial_state, t, args=(sigma, rho, beta))
+    x, y, z = sol[:, 0], sol[:, 1], sol[:, 2]
 
-        # 3. Trajectory Calculation (for Animation)
-        def system_func(state, t):
-            step_scope = local_scope.copy()
-            step_scope["x"] = state[0]
-            step_scope["y"] = state[1]
-            dxdt = eval(eq_x, {"__builtins__": None}, step_scope)
-            dydt = eval(eq_y, {"__builtins__": None}, step_scope)
-            return [dxdt, dydt]
+    # --- 4. 3D Visualization ---
+    
+    # A. The Static Path (The "Shape")
+    # We plot the full trajectory as a faint line so the user sees the attractor structure
+    fig = go.Figure()
+    
+    fig.add_trace(go.Scatter3d(
+        x=x, y=y, z=z,
+        mode='lines',
+        name='Attractor Path',
+        line=dict(color=z, colorscale='Viridis', width=2, opacity=0.4)
+    ))
 
-        t_span = np.linspace(0, t_max, frames)
-        sol = odeint(system_func, [x0, y0], t_span)
-        
-        # --- Plotly Visualization ---
-        
-        # 1. Create Quiver Plot (The Arrows)
-        # We use figure_factory for easy quiver plots
-        fig = ff.create_quiver(
-            x, y, U, V,
-            scale=0.2,
-            arrow_scale=0.3,
-            name='Vector Field',
-            line=dict(color='gray', width=1)
-        )
-        
-        # 2. Add the Static Trajectory Line (The Path)
-        fig.add_trace(go.Scatter(
-            x=sol[:, 0], y=sol[:, 1],
-            mode='lines',
-            name='Trajectory',
-            line=dict(color='red', width=2)
+    # B. The Animation (The "Dynamics")
+    # We create frames for the particle moving along the path
+    frames = []
+    # We skip points to make the animation lighter/faster
+    progression_indices = range(0, len(t), speed)
+    
+    for k in progression_indices:
+        frames.append(go.Frame(
+            data=[go.Scatter3d(
+                x=[x[k]], y=[y[k]], z=[z[k]],
+                mode='markers',
+                marker=dict(color='red', size=6, symbol='diamond'),
+                name='Particle'
+            )],
+            name=str(k)
         ))
 
-        # 3. Create Animation Frames (The Moving Dot)
-        # This creates a list of "snapshots" for the play button
-        animation_frames = []
-        for i in range(len(t_span)):
-            animation_frames.append(
-                go.Frame(
-                    data=[go.Scatter(
-                        x=[sol[i, 0]], 
-                        y=[sol[i, 1]], 
-                        mode='markers',
-                        marker=dict(color='blue', size=12)
-                    )],
-                    name=str(i)
-                )
-            )
-            
-        fig.frames = animation_frames
+    # Add the initial particle
+    fig.add_trace(go.Scatter3d(
+        x=[x[0]], y=[y[0]], z=[z[0]],
+        mode='markers',
+        name='Particle',
+        marker=dict(color='red', size=6, symbol='diamond')
+    ))
 
-        # 4. Add the Dot (Initial Position) to the main figure
-        fig.add_trace(go.Scatter(
-            x=[x0], y=[y0],
-            mode='markers',
-            name='Particle',
-            marker=dict(color='blue', size=12)
-        ))
+    # C. Layout & Controls
+    fig.update_layout(
+        title=f"Lorenz Attractor (Rho={rho})",
+        width=900, height=700,
+        scene=dict(
+            xaxis=dict(title='X'),
+            yaxis=dict(title='Y'),
+            zaxis=dict(title='Z'),
+            camera=dict(eye=dict(x=1.5, y=1.5, z=1.5)) # Nice viewing angle
+        ),
+        template="plotly_dark",
+        updatemenus=[dict(
+            type="buttons",
+            showactive=False,
+            x=0.1, y=0.9,
+            buttons=[
+                dict(label="▶ Play",
+                     method="animate",
+                     args=[None, dict(frame=dict(duration=10, redraw=True), fromcurrent=True)]),
+                dict(label="⏸ Pause",
+                     method="animate",
+                     args=[[None], dict(frame=dict(duration=0, redraw=False), mode="immediate", transition=dict(duration=0))])
+            ]
+        )]
+    )
 
-        # 5. Configure Layout & Buttons
-        fig.update_layout(
-            title="Phase Portrait (Click Play to Animate)",
-            xaxis_title="x",
-            yaxis_title="y",
-            width=800,
-            height=600,
-            hovermode="closest",
-            # Add Play/Pause Buttons
-            updatemenus=[dict(
-                type="buttons",
-                showactive=False,
-                buttons=[dict(
-                    label="Play",
-                    method="animate",
-                    args=[None, dict(frame=dict(duration=50, redraw=False), fromcurrent=True)]
-                ),
-                dict(
-                    label="Pause",
-                    method="animate",
-                    args=[[None], dict(frame=dict(duration=0, redraw=False), mode="immediate", transition=dict(duration=0))]
-                )]
-            )]
-        )
+    # Attach frames to figure
+    fig.frames = frames
 
+    # Show Plot
+    col1, col2 = st.columns([3, 1])
+    with col1:
         st.plotly_chart(fig, use_container_width=True)
-
-    except Exception as e:
-        st.error(f"Equation Error: {e}")
+    with col2:
+        st.markdown("### What are we seeing?")
+        st.info("""
+        **The Lorenz Attractor**
+        
+        This is a solution to a system of equations originally used to model atmospheric convection.
+        
+        * **The Particle:** Represents the state of the system at a moment in time.
+        * **The Wings:** The particle orbits one wing, then unpredictably switches to the other.
+        * **Chaos:** Note that the path never crosses itself!
+        """)
 
 if __name__ == "__main__":
     main()

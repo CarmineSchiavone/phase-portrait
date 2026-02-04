@@ -1,113 +1,136 @@
 import streamlit as st
 import numpy as np
-import matplotlib.pyplot as plt
+import plotly.graph_objects as go
+import plotly.figure_factory as ff
 from scipy.integrate import odeint
 
 def main():
-    st.set_page_config(page_title="Phase Portrait Plotter", layout="wide")
-    
-    st.title("Math Sandbox: 2D ODE Phase Portraits")
+    st.set_page_config(page_title="Interactive Phase Portrait", layout="wide")
+    st.title("Math Sandbox: Interactive & Animated")
 
-    # --- Sidebar: System Configuration ---
-    st.sidebar.header("1. Define System")
-    # Using 'sin' instead of 'np.sin' is now supported via local_scope
-    eq_x = st.sidebar.text_input("dx/dt =", value="y")
-    eq_y = st.sidebar.text_input("dy/dt =", value="-x - 0.5*y") # Damped oscillator default
-
-    # --- Sidebar: Trajectory Settings ---
-    st.sidebar.header("2. Add Trajectory")
-    show_traj = st.sidebar.checkbox("Show Specific Solution", value=True)
-    
-    # Grid columns for compact layout
-    col1, col2 = st.sidebar.columns(2)
-    with col1:
-        x0 = st.number_input("Start X", value=2.0, step=0.1)
-    with col2:
-        y0 = st.number_input("Start Y", value=2.0, step=0.1)
+    # --- Sidebar: Configuration ---
+    with st.sidebar:
+        st.header("1. System")
+        eq_x = st.text_input("dx/dt =", value="y")
+        eq_y = st.text_input("dy/dt =", value="sin(x) - 0.2*y") # Damped pendulum
         
-    t_max = st.sidebar.slider("Time Duration", 1.0, 50.0, 10.0)
-
-    # --- Sidebar: Plot Settings ---
-    st.sidebar.header("3. Plot Settings")
-    x_range = st.sidebar.slider("X Range", -10.0, 10.0, (-5.0, 5.0))
-    y_range = st.sidebar.slider("Y Range", -10.0, 10.0, (-5.0, 5.0))
-    density = st.sidebar.slider("Arrow Density", 0.5, 3.0, 1.5)
+        st.header("2. Animation")
+        t_max = st.slider("Time Duration", 5.0, 50.0, 20.0)
+        frames = st.slider("Animation Speed (Frames)", 50, 200, 100)
+        
+        st.header("3. Initial Condition")
+        col1, col2 = st.columns(2)
+        x0 = col1.number_input("x0", value=2.0, step=0.5)
+        y0 = col2.number_input("y0", value=0.0, step=0.5)
 
     # --- Computation ---
     
-    # 1. Prepare the Grid
-    x = np.linspace(x_range[0], x_range[1], 20)
-    y = np.linspace(y_range[0], y_range[1], 20)
+    # 1. Grid for Vector Field
+    range_val = 6.0
+    # Use fewer points for Plotly to keep interaction smooth
+    x = np.linspace(-range_val, range_val, 20)
+    y = np.linspace(-range_val, range_val, 20)
     X, Y = np.meshgrid(x, y)
     
-    # 2. Define Scope for eval()
+    # 2. Safety & Eval Wrapper
     local_scope = {
         "sin": np.sin, "cos": np.cos, "tan": np.tan,
         "exp": np.exp, "sqrt": np.sqrt, "pi": np.pi,
-        "x": X, "y": Y  # These will be overwritten during trajectory calc
+        "x": X, "y": Y
     }
-
+    
     try:
-        # --- A. Vector Field (Grid Calculation) ---
-        # Eval uses meshgrid X, Y
+        # Compute Vector Field
         U = eval(eq_x, {"__builtins__": None}, local_scope)
         V = eval(eq_y, {"__builtins__": None}, local_scope)
-        
-        # --- B. Trajectory (Point Calculation) ---
-        sol_forward, sol_backward = None, None
-        
-        if show_traj:
-            # We need a function wrapper for odeint
-            # state is [x, y], t is time
-            def system_func(state, t):
-                # Update scope to use scalar values (current point)
-                # We copy scope to avoid modifying the original for the grid
-                step_scope = local_scope.copy()
-                step_scope["x"] = state[0]
-                step_scope["y"] = state[1]
-                
-                # Eval returns a scalar here, not a grid
-                dxdt = eval(eq_x, {"__builtins__": None}, step_scope)
-                dydt = eval(eq_y, {"__builtins__": None}, step_scope)
-                return [dxdt, dydt]
 
-            # Time points
-            t_span_fwd = np.linspace(0, t_max, 200)
-            t_span_bwd = np.linspace(0, -t_max, 200) # Go backward in time too!
+        # 3. Trajectory Calculation (for Animation)
+        def system_func(state, t):
+            step_scope = local_scope.copy()
+            step_scope["x"] = state[0]
+            step_scope["y"] = state[1]
+            dxdt = eval(eq_x, {"__builtins__": None}, step_scope)
+            dydt = eval(eq_y, {"__builtins__": None}, step_scope)
+            return [dxdt, dydt]
+
+        t_span = np.linspace(0, t_max, frames)
+        sol = odeint(system_func, [x0, y0], t_span)
+        
+        # --- Plotly Visualization ---
+        
+        # 1. Create Quiver Plot (The Arrows)
+        # We use figure_factory for easy quiver plots
+        fig = ff.create_quiver(
+            x, y, U, V,
+            scale=0.2,
+            arrow_scale=0.3,
+            name='Vector Field',
+            line=dict(color='gray', width=1)
+        )
+        
+        # 2. Add the Static Trajectory Line (The Path)
+        fig.add_trace(go.Scatter(
+            x=sol[:, 0], y=sol[:, 1],
+            mode='lines',
+            name='Trajectory',
+            line=dict(color='red', width=2)
+        ))
+
+        # 3. Create Animation Frames (The Moving Dot)
+        # This creates a list of "snapshots" for the play button
+        animation_frames = []
+        for i in range(len(t_span)):
+            animation_frames.append(
+                go.Frame(
+                    data=[go.Scatter(
+                        x=[sol[i, 0]], 
+                        y=[sol[i, 1]], 
+                        mode='markers',
+                        marker=dict(color='blue', size=12)
+                    )],
+                    name=str(i)
+                )
+            )
             
-            # Solve IVP
-            sol_forward = odeint(system_func, [x0, y0], t_span_fwd)
-            sol_backward = odeint(system_func, [x0, y0], t_span_bwd)
+        fig.frames = animation_frames
 
-        # --- Visualization ---
-        fig, ax = plt.subplots(figsize=(10, 6))
-        
-        # 1. Plot Vector Field (Background)
-        strm = ax.streamplot(X, Y, U, V, color=np.sqrt(U**2 + V**2), cmap='viridis', density=density)
-        fig.colorbar(strm.lines, label='Velocity Magnitude')
-        
-        # 2. Plot Trajectory (Foreground)
-        if show_traj and sol_forward is not None:
-            # Forward path (solid red)
-            ax.plot(sol_forward[:, 0], sol_forward[:, 1], 'r-', linewidth=2, label='Future')
-            # Backward path (dashed red)
-            ax.plot(sol_backward[:, 0], sol_backward[:, 1], 'r--', linewidth=2, alpha=0.5, label='Past')
-            # Start point (green dot)
-            ax.plot(x0, y0, 'go', markersize=8, label='Start')
-            ax.legend(loc='upper right')
+        # 4. Add the Dot (Initial Position) to the main figure
+        fig.add_trace(go.Scatter(
+            x=[x0], y=[y0],
+            mode='markers',
+            name='Particle',
+            marker=dict(color='blue', size=12)
+        ))
 
-        ax.set_xlabel('x')
-        ax.set_ylabel('y')
-        ax.set_xlim(x_range)
-        ax.set_ylim(y_range)
-        ax.set_title('Phase Portrait & Trajectory')
-        ax.grid(True, alpha=0.3)
-        
-        st.pyplot(fig)
+        # 5. Configure Layout & Buttons
+        fig.update_layout(
+            title="Phase Portrait (Click Play to Animate)",
+            xaxis_title="x",
+            yaxis_title="y",
+            width=800,
+            height=600,
+            hovermode="closest",
+            # Add Play/Pause Buttons
+            updatemenus=[dict(
+                type="buttons",
+                showactive=False,
+                buttons=[dict(
+                    label="Play",
+                    method="animate",
+                    args=[None, dict(frame=dict(duration=50, redraw=False), fromcurrent=True)]
+                ),
+                dict(
+                    label="Pause",
+                    method="animate",
+                    args=[[None], dict(frame=dict(duration=0, redraw=False), mode="immediate", transition=dict(duration=0))]
+                )]
+            )]
+        )
+
+        st.plotly_chart(fig, use_container_width=True)
 
     except Exception as e:
-        st.error(f"Error: {e}")
-        st.info("Ensure your equations use 'x' and 'y' and valid math functions like 'sin(x)'.")
+        st.error(f"Equation Error: {e}")
 
 if __name__ == "__main__":
     main()

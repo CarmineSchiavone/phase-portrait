@@ -40,14 +40,17 @@ def main():
     # --- 4. 3D Visualization ---
     
     # A. The Static Path (The "Shape")
-    # We plot the full trajectory as a faint line so the user sees the attractor structure
+ 
     fig = go.Figure()
     
     fig.add_trace(go.Scatter3d(
         x=x, y=y, z=z,
         mode='lines',
         name='Attractor Path',
-        line=dict(color=z, colorscale='Viridis', width=2, opacity=0.4)
+        # Opacity belongs here, as a property of the Trace
+        opacity=0.4, 
+        # Line dictionary only handles color, width, etc.
+        line=dict(color=z, colorscale='Viridis', width=2)
     ))
 
     # B. The Animation (The "Dynamics")
